@@ -1,0 +1,4 @@
+# CDK specific Python dependencies
+# Install using: pip install -r requirements-cdk.txt
+aws-cdk-lib>=2.100.0 # Folosește o versiune recentă
+constructs>=10.0.0
