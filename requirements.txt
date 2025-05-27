@@ -1,0 +1,13 @@
+# Python packages for AI Photobooth
+# Install using: pip install -r requirements.txt
+
+pygame>=2.0.0      # For display, sound playback, and event handling
+opencv-python>=4.5.0 # For camera access and QR code detection
+numpy>=1.19.0      # Dependency for OpenCV and other numerical operations
+google-cloud-texttospeech>=2.5.0 # Google Cloud Text-to-Speech API
+google-cloud-speech>=2.10.0    # Google Cloud Speech-to-Text API (with streaming)
+boto3>=1.17.0        # AWS SDK for Python (for S3)
+qrcode[pil]>=7.0    # For generating QR codes (includes Pillow for image manipulation)
+sounddevice>=0.4.0   # For audio recording (microphone input)
+soundfile>=0.10.0    # For reading/writing sound files (used by TTS saving/loading for Pygame)
+requests>=2.25.0     # For making HTTP requests to the ticket API
