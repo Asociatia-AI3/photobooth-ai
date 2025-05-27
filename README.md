@@ -1,4 +1,4 @@
-# difffusion PhotoBoothAI
+# #️⃣ difffusion PhotoBoothAI 📺 🐟 🧶
 
 ## Cerințe
 
