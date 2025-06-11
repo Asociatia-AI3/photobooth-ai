@@ -9,15 +9,9 @@ import qrcode
 import cv2
 from google import genai
 from google.genai.types import (
-    Content,
-    FunctionDeclaration,
-    FunctionResponse,
-    Tool,
-    LiveConnectConfig,
-    Modality,
-    Part,
-    Schema,
-    Type,
+    Content, FunctionDeclaration, FunctionResponse, Tool,
+    LiveConnectConfig, Modality, SpeechConfig,
+    VoiceConfig, PrebuiltVoiceConfig, Part, Schema, Type
 )
 
 # Configure Gemini
@@ -64,6 +58,25 @@ def display_on_tv(img_b64: str):
     cv2.waitKey(60000)
     cv2.destroyAllWindows()
 
+def start_audio_input(session):
+    loop = asyncio.get_event_loop()
+
+    def callback(indata, frames, time, status):
+        data = indata.tobytes()
+        loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(session.send_realtime_input(
+                audio={"data": data, "mime_type": "audio/pcm;rate=16000"}
+            ))
+        )
+
+    stream = sd.InputStream(channels=1, samplerate=16000, dtype='int16', callback=callback)
+    stream.start()
+    return stream
+
+def start_audio_output():
+    out = sd.OutputStream(channels=1, samplerate=24000, dtype='int16')
+    out.start()
+    return out
 
 # ✅ Flux principal
 async def main():
@@ -134,8 +147,18 @@ async def main():
 
     async with client.aio.live.connect(
         model="gemini-2.0-flash-live-001",
-        config=LiveConnectConfig(tools=tools),
+        config=LiveConnectConfig(
+            response_modalities=[Modality.AUDIO],
+            speech_config=SpeechConfig(
+                voice_config=VoiceConfig(
+                    prebuilt_voice_config=PrebuiltVoiceConfig(voice_name="Zephyr")
+                )
+            ),
+            tools=tools),
     ) as session:
+        audio_out = start_audio_output()
+        start_audio_input(session)
+
         print("📢 Starting session...")
         await session.send_client_content(
             turns=Content(
@@ -144,8 +167,9 @@ async def main():
         )
 
         async for msg in session.receive():
-            if msg.text:
-                print("Gemini:", msg.text)
+            if msg.data:
+                pcm = np.frombuffer(msg.data, dtype=np.int16)
+                audio_out.write(pcm)
             if msg.tool_call and msg.tool_call.function_calls is not None:
                 fn_responses: list[FunctionResponse] = []
                 for fn_call in msg.tool_call.function_calls:
