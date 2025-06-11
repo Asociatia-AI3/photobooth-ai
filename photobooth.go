@@ -11,10 +11,10 @@ import (
     "os/signal"
     "time"
 
+    "gocv.io/x/gocv"
     "github.com/google/uuid"
     "github.com/gordonklaus/portaudio"
     "layeh.com/gopus"
-    "gocv.io/x/gocv"
     "github.com/aws/aws-sdk-go/aws"
     "github.com/aws/aws-sdk-go/aws/session"
     "github.com/aws/aws-sdk-go/service/s3"
@@ -23,33 +23,50 @@ import (
     "google.golang.org/genai/genaiws"
 )
 
-// Canale globale pentru streaming audio/video
+// Canale audio/video
 var (
     audioChan = make(chan []byte, 100)
     videoChan = make(chan []byte, 10)
 )
 
 func main() {
-    // Pornește streaming continui audio și video
+    stopScanner := make(chan struct{})
+    qrChan := make(chan string)
+
+    go webcamQRScanner(videoChan, stopScanner, qrChan)
+    qrData := <-qrChan
+    close(stopScanner)
+
+    log.Println("QR detectat:", qrData)
+    user, err := graphqlIdentify(qrData)
+    if err != nil {
+        log.Fatalf("Grafică utilizator eșuat: %v", err)
+    }
+    log.Printf("User: %s (%s)", user.Name, user.Code)
+
     go streamMicAudio(audioChan)
     go playAudio(audioChan)
     stopVid := make(chan struct{})
     go webcamStream(videoChan, stopVid)
 
-    // Inițializează client Gemini Live
+    startGeminiLive(user)
+
+    close(stopVid)
+    log.Println("Sesiune terminată")
+}
+
+func startGeminiLive(user *User) {
     ctx := context.Background()
     client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: os.Getenv("GEMINI_API_KEY")})
     if err != nil {
         log.Fatal(err)
     }
 
-    // Declarații function-call
     tools := []genaiws.FunctionDeclaration{
-        {Name: "identifyUser", Description: "Identify via QR", Parameters: schema(`{"type":"object","properties":{"qr_data":{"type":"string"}},"required":["qr_data"]}`)},
-        {Name: "captureSnapshot", Description: "Take webcam snapshot", Parameters: schema(`{"type":"object","properties":{},"required":[]}`)},
-        {Name: "uploadToS3", Description: "Upload image bytes", Parameters: schema(`{"type":"object","properties":{"bytes":{"type":"string"},"user_code":{"type":"string"}},"required":["bytes","user_code"]}`)},
-        {Name: "generateQR", Description: "Generate QR code", Parameters: schema(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`)},
-        {Name: "displayOnTV", Description: "Show image on TV", Parameters: schema(`{"type":"object","properties":{"img_b64":{"type":"string"}},"required":["img_b64"]}`)},
+        genaiws.FunctionDeclaration{Name: "captureSnapshot", Description: "Makes snapshot", Parameters: schema(`{"type":"object","properties":{},"required":[]}`)},
+        genaiws.FunctionDeclaration{Name: "uploadToS3", Description: "Uploads image", Parameters: schema(`{"type":"object","properties":{"bytes":{"type":"string"},"user_code":{"type":"string"}},"required":["bytes","user_code"]}`)},
+        genaiws.FunctionDeclaration{Name: "generateQR", Description: "Creates QR code", Parameters: schema(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}`)},
+        genaiws.FunctionDeclaration{Name: "displayOnTV", Description: "Show on TV", Parameters: schema(`{"type":"object","properties":{"img_b64":{"type":"string"}},"required":["img_b64"]}`)},
     }
 
     conn, err := genaiws.DialLive(ctx, client, "gemini-2.0-flash-live-preview-04-09", genaiws.LiveConfig{
@@ -61,27 +78,19 @@ func main() {
     }
     defer conn.Close()
 
-    conn.SendText("standby")
+    systemPrompt := fmt.Sprintf("Ești un asistent foto la festival. Salută pe %s și propune o poză.", user.Name)
+    conn.SendText(systemPrompt)
 
-    // Handler pentru function_call-uri Gemini
     go func() {
         for msg := range conn.Receive() {
             if fc := msg.FunctionCall; fc != nil {
                 switch fc.Name {
-                case "identifyUser":
-                    qr := fc.Args["qr_data"].(string)
-                    user, _ := graphqlIdentify(qr)
-                    conn.SendToolResponse("identifyUser", map[string]string{
-                        "user_name": user.Name, "user_code": user.Code,
-                    })
                 case "captureSnapshot":
                     img := <-videoChan
-                    conn.SendToolResponse("captureSnapshot", map[string]string{
-                        "image_bytes": base64.StdEncoding.EncodeToString(img),
-                    })
+                    conn.SendToolResponse("captureSnapshot", map[string]string{"image_bytes": base64.StdEncoding.EncodeToString(img)})
                 case "uploadToS3":
                     b, _ := base64.StdEncoding.DecodeString(fc.Args["bytes"].(string))
-                    url, _ := uploadToS3(fc.Args["user_code"].(string), b)
+                    url, _ := uploadToS3(user.Code, b)
                     conn.SendToolResponse("uploadToS3", map[string]string{"url": url})
                 case "generateQR":
                     png, _ := qrcode.Encode(fc.Args["url"].(string), qrcode.Medium, 256)
@@ -94,62 +103,20 @@ func main() {
         }
     }()
 
-    // Așteaptă CTRL+C pentru oprire
     c := make(chan os.Signal, 1)
     signal.Notify(c, os.Interrupt)
     <-c
-    close(stopVid)
-    conn.Close()
 }
-
-// Funții helper
 
 type User struct{ Name, Code string }
 
 func graphqlIdentify(qr string) (*User, error) {
-    // înlocuiește cu GraphQL real
+    // Înlocuiește cu apel real GraphQL
     return &User{Name: "Adrian", Code: "WR1234"}, nil
 }
 
-func uploadToS3(userCode string, img []byte) (string, error) {
-    sess := session.Must(session.NewSession())
-    svc := s3.New(sess)
-    key := fmt.Sprintf("%s/%s.jpg", userCode, uuid.New().String())
-    _, err := svc.PutObject(&s3.PutObjectInput{
-        Bucket: aws.String("festival-booth"),
-        Key:    aws.String(key),
-        Body:   bytes.NewReader(img),
-    })
-    return fmt.Sprintf("https://festival-booth.s3.amazonaws.com/%s", key), err
-}
-
-// Afișează imagine base64 full-screen pe TV folosind GoCV
-func displayOnTV(imgB64 string) {
-    data, err := base64.StdEncoding.DecodeString(imgB64)
-    if err != nil {
-        log.Printf("displayOnTV: decode error: %v", err)
-        return
-    }
-    mat, err := gocv.IMDecode(data, gocv.IMReadColor)
-    if err != nil {
-        log.Printf("displayOnTV: IMDecode error: %v", err)
-        return
-    }
-    defer mat.Close()
-
-    window := gocv.NewWindow("FestivalBooth")
-    defer window.Close()
-    window.SetWindowProperty(gocv.WindowPropertyFullscreen, gocv.WindowFullscreen)
-    window.IMShow(mat)
-    // Afișează QR-ul cel puțin 60s
-    window.WaitKey(60000)
-}
-
-// Streaming audio și video continuu
-
 func streamMicAudio(out chan<- []byte) {
-    portaudio.Initialize()
-    defer portaudio.Terminate()
+    portaudio.Initialize(); defer portaudio.Terminate()
     enc, _ := gopus.NewEncoder(48000, 1, gopus.AppAudio)
     stream, _ := portaudio.OpenDefaultStream(1, 0, 48000, 960, func(in []int16) {
         pcm := make([]float32, len(in))
@@ -162,13 +129,11 @@ func streamMicAudio(out chan<- []byte) {
     })
     defer stream.Close()
     stream.Start()
-    <-make(chan os.Signal, 1)
-    stream.Stop()
+    select {}
 }
 
 func playAudio(in <-chan []byte) {
-    portaudio.Initialize()
-    defer portaudio.Terminate()
+    portaudio.Initialize(); defer portaudio.Terminate()
     dec, _ := gopus.NewDecoder(48000, 1)
     stream, _ := portaudio.OpenDefaultStream(0, 1, 48000, 960, func(out []int16) {
         select {
@@ -190,26 +155,76 @@ func playAudio(in <-chan []byte) {
 
 func webcamStream(out chan<- []byte, stop <-chan struct{}) {
     cam, err := gocv.VideoCaptureDevice(0)
-    if err != nil {
-        log.Fatalf("webcam open: %v", err)
-    }
+    if err != nil { log.Fatalf("webcam error: %v", err) }
     defer cam.Close()
-    img := gocv.NewMat()
-    defer img.Close()
+    img := gocv.NewMat(); defer img.Close()
     ticker := time.NewTicker(100 * time.Millisecond)
     defer ticker.Stop()
+
     for {
         select {
         case <-ticker.C:
-            if ok := cam.Read(&img); ok && !img.Empty() {
-                if buf, err := gocv.IMEncode(".jpg", img); err == nil {
-                    out <- buf.GetBytes()
-                }
+            if ok := cam.Read(&img); !ok || img.Empty() {
+                continue
+            }
+            if buf, err := gocv.IMEncode(".jpg", img); err == nil {
+                out <- buf.GetBytes()
             }
         case <-stop:
             return
         }
     }
+}
+
+func webcamQRScanner(out chan<- []byte, stop <-chan struct{}, qrChan chan<- string) {
+    cam, _ := gocv.VideoCaptureDevice(0)
+    defer cam.Close()
+    img := gocv.NewMat(); defer img.Close()
+    qcd := gocv.NewQRCodeDetector()
+    defer qcd.Close()
+    ticker := time.NewTicker(100 * time.Millisecond)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            if ok := cam.Read(&img); !ok || img.Empty() {
+                continue
+            }
+            if buf, err := gocv.IMEncode(".jpg", img); err == nil {
+                out <- buf.GetBytes()
+            }
+            if code := qcd.DetectAndDecode(img); code != "" {
+                qrChan <- code
+                return
+            }
+        case <-stop:
+            return
+        }
+    }
+}
+
+func uploadToS3(userCode string, data []byte) (string, error) {
+    sess := session.Must(session.NewSession())
+    svc := s3.New(sess)
+    key := fmt.Sprintf("%s/%s.jpg", userCode, uuid.New().String())
+    _, err := svc.PutObject(&s3.PutObjectInput{
+        Bucket: aws.String("festival-booth"), Key: aws.String(key), Body: bytes.NewReader(data),
+    })
+    return fmt.Sprintf("https://festival-booth.s3.amazonaws.com/%s", key), err
+}
+
+func displayOnTV(imgB64 string) {
+    data, err := base64.StdEncoding.DecodeString(imgB64)
+    if err != nil { log.Printf("TV decode err: %v", err); return }
+    mat, err := gocv.IMDecode(data, gocv.IMReadColor)
+    if err != nil { log.Printf("IMDecode err: %v", err); return }
+    defer mat.Close()
+    win := gocv.NewWindow("FestivalBooth")
+    defer win.Close()
+    win.SetWindowProperty(gocv.WindowPropertyFullscreen, gocv.WindowFullscreen)
+    win.IMShow(mat)
+    win.WaitKey(60000)
 }
 
 func schema(s string) interface{} { return map[string]interface{}{} }
