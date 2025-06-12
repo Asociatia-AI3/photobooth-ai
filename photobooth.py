@@ -8,10 +8,20 @@ import boto3
 import qrcode
 import cv2
 from google import genai
+from google.genai.live import AsyncSession
 from google.genai.types import (
-    Content, FunctionDeclaration, FunctionResponse, Tool,
-    LiveConnectConfig, Modality, SpeechConfig,
-    VoiceConfig, PrebuiltVoiceConfig, Part, Schema, Type
+    FunctionDeclaration,
+    FunctionResponse,
+    GoogleSearch,
+    Tool,
+    LiveConnectConfig,
+    Modality,
+    ProactivityConfig,
+    SpeechConfig,
+    VoiceConfig,
+    PrebuiltVoiceConfig,
+    Schema,
+    Type,
 )
 
 # Configure Gemini
@@ -19,6 +29,10 @@ api_key = os.getenv("GOOGLE_API_KEY")
 print(api_key)
 client = genai.Client(api_key=api_key)
 S3_BUCKET = os.getenv("BUCKET_NAME", "festival-booth")
+
+SAMPLERATE = 16000  # Rata de eșantionare pe care o așteaptă Gemini
+CHANNELS = 1  # Mono
+DTYPE = "int16"  # Formatul de date așteptat de API
 
 
 # 🎫 Mock GraphQL
@@ -58,33 +72,78 @@ def display_on_tv(img_b64: str):
     cv2.waitKey(60000)
     cv2.destroyAllWindows()
 
-async def start_audio_input(session):
+
+async def inputstream_generator():
+    """Generator care produce blocuri de date de la microfon."""
+    q_in = asyncio.Queue()
     loop = asyncio.get_event_loop()
 
-    def callback(indata, frames, time, status):
-        print("se aude..")
-        data = indata.tobytes()
-        loop.run_until_complete(session.send_realtime_input(
-            audio={"data": data, "mime_type": "audio/pcm;rate=16000"}
-        ))
+    def callback(indata, frame_count, time_info, status):
+        """Callback-ul este apelat de sounddevice într-un thread separat."""
+        if status:
+            print(status, flush=True)
+        # Pune datele în coada asyncio într-un mod thread-safe
+        loop.call_soon_threadsafe(q_in.put_nowait, (indata.copy(), status))
 
-    s = sd.InputStream(channels=1, samplerate=16000, dtype='int16')
-    s.start()
-    print("Capturing audio...")
-    while True:
-        print("start read mic")
-        indata = s.read(16000)
-        print("se aude..")
-        data = indata[0].tobytes()
+    # Folosim configurația centralizată
+    stream = sd.InputStream(
+        callback=callback, channels=CHANNELS, samplerate=SAMPLERATE, dtype=DTYPE
+    )
+    with stream:
+        print("🎙️ Microfonul este activ...")
+        while True:
+            indata, status = await q_in.get()
+            yield indata, status
+
+
+async def send_audio_to_agent(session, **kwargs):
+    """Show minimum and maximum value of each incoming audio block."""
+    async for indata, status in inputstream_generator(**kwargs):
+        if status:
+            print(status)
         await session.send_realtime_input(
-            audio={"data": data, "mime_type": "audio/pcm;rate=16000"}
+            audio={
+                "data": indata.tobytes(),
+                "mime_type": f"audio/pcm;rate={SAMPLERATE}",
+            }
         )
-    s.stop()
+
 
 def start_audio_output():
-    out = sd.OutputStream(channels=1, samplerate=24000, dtype='int16')
+    out = sd.OutputStream(channels=1, samplerate=24000, dtype="int16")
     out.start()
     return out
+
+
+async def handle_agent_messages(
+    session: AsyncSession, audio_out: sd.OutputStream, user: dict
+):
+    while True:
+        async for msg in session.receive():
+            if msg.data:
+                pcm = np.frombuffer(msg.data, dtype=np.int16)
+                audio_out.write(pcm)
+            if msg.tool_call and msg.tool_call.function_calls is not None:
+                print("tool calls received")
+                fn_responses: list[FunctionResponse] = []
+                for fn_call in msg.tool_call.function_calls:
+                    name = fn_call.name
+                    args = fn_call.args or {}
+                    if name == "capture_snapshot":
+                        res = capture_snapshot()
+                    elif name == "upload_to_s3":
+                        res = upload_to_s3(args["bytes"], user["code"])
+                    elif name == "generate_qr":
+                        res = generate_qr(args["url"])
+                    elif name == "display_on_tv":
+                        res = display_on_tv(args["img_b64"]) or "ok"
+                    else:
+                        continue
+                    fn_responses.append(
+                        FunctionResponse(name=name, response={"output": res})
+                    )
+                await session.send_tool_response(function_responses=fn_responses)
+
 
 # ✅ Flux principal
 async def main():
@@ -111,6 +170,7 @@ async def main():
 
     tools = [
         Tool(
+            google_search=GoogleSearch(),
             function_declarations=[
                 FunctionDeclaration(
                     name="capture_snapshot",
@@ -124,9 +184,8 @@ async def main():
                         type=Type.OBJECT,
                         properties={
                             "bytes": Schema(type=Type.STRING),
-                            "user_code": Schema(type=Type.STRING),
                         },
-                        required=["bytes", "user_code"],
+                        required=["bytes"],
                     ),
                 ),
                 FunctionDeclaration(
@@ -155,52 +214,26 @@ async def main():
 
     async with client.aio.live.connect(
         model="gemini-2.5-flash-preview-native-audio-dialog",
+        # model="gemini-2.0-flash-live-001",
         config=LiveConnectConfig(
             response_modalities=[Modality.AUDIO],
+            system_instruction=f"Esti un agent de photobooth la festivalul diffusion (pronuntat ca in engleza) si vorbesti cu {user.get('name')}",
             speech_config=SpeechConfig(
                 voice_config=VoiceConfig(
                     prebuilt_voice_config=PrebuiltVoiceConfig(voice_name="Zephyr")
                 )
             ),
-            tools=tools),
+            tools=tools,
+        ),
     ) as session:
+        print("📢 Starting session...")
+        audio_out = start_audio_output()
+
         async with asyncio.TaskGroup() as tg:
-            audio_out = start_audio_output()
-            audio_in = tg.create_task(start_audio_input(session))
-
-            print("📢 Starting session...")
-            await session.send_client_content(
-                turns=Content(
-                    parts=[Part(text=f"Salutare, sunt {user.get('name')} si am ajuns la Festivalul Diffusion. Am inteles ca ne poti ajuta sa facem o poza?")]
-                )
+            mic = tg.create_task(send_audio_to_agent(session=session))
+            await tg.create_task(
+                handle_agent_messages(session=session, audio_out=audio_out, user=user)
             )
-
-            async for msg in session.receive():
-                if msg.data:
-                    pcm = np.frombuffer(msg.data, dtype=np.int16)
-                    audio_out.write(pcm)
-                if msg.tool_call and msg.tool_call.function_calls is not None:
-                    fn_responses: list[FunctionResponse] = []
-                    for fn_call in msg.tool_call.function_calls:
-                        name = fn_call.name
-                        args = fn_call.args or {}
-                        if name == "capture_snapshot":
-                            res = capture_snapshot()
-                        elif name == "upload_to_s3":
-                            res = upload_to_s3(args["bytes"], user["code"])
-                        elif name == "generate_qr":
-                            res = generate_qr(args["url"])
-                        elif name == "display_on_tv":
-                            res = display_on_tv(args["img_b64"]) or "ok"
-                        else:
-                            continue
-                        fn_responses.append(
-                            FunctionResponse(name=name, response={"output": res})
-                        )
-                    await session.send_tool_response(function_responses=fn_responses)
-            
-            while True:
-                pass
 
 
 if __name__ == "__main__":
