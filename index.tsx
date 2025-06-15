@@ -18,6 +18,7 @@ import { customElement, query, state } from "lit/decorators.js";
 import { createBlob, decode, decodeAudioData } from "./utils";
 import "./visual-3d";
 import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
+import { Html5QrcodeErrorTypes } from "html5-qrcode/src/core";
 import { Webcam } from "ts-webcam";
 import QrCreator from "qr-creator";
 
@@ -205,7 +206,12 @@ export class GdmLiveAudio extends LitElement {
         this.initClient();
         this.startRecording();
       },
-      (err) => this.updateError(err)
+      (errTxt, err) => { 
+        this.updateStatus("Scanning for ticket..");
+        if (err.type === Html5QrcodeErrorTypes.IMPLEMENTATION_ERROR) {
+          this.updateError(errTxt);
+        }
+      }
     );
   }
 
