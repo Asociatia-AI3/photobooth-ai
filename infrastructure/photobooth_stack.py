@@ -20,7 +20,8 @@ class PhotoboothS3Stack(Stack):
             self, "PhotoboothBucket",
             versioned=False,  # Poți seta True dacă dorești versionare
             encryption=s3.BucketEncryption.S3_MANAGED, # Criptare server-side
-            block_public_access=s3.BlockPublicAccess.BLOCK_ALL, # Recomandat
+            public_read_access=True, 
+            block_public_access=s3.BlockPublicAccess.BLOCK_ACLS, # Permite Bucket Policies
             # ATENȚIE: Următoarele două linii sunt pentru dezvoltare/testare facilă.
             # Pentru producție, acestea ar trebui setate la False sau eliminate,
             # și bucket-ul ar trebui reținut sau golit manual înainte de ștergere.

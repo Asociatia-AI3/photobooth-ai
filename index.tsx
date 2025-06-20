@@ -588,7 +588,7 @@ export class GdmLiveAudio extends LitElement {
       const imageDataUrl = await webcam.captureImage({
         scale: 1.0,
         mediaType: "image/jpeg",
-        quality: 0.8,
+        quality: 0.9,
       });
 
       // 2. Extrageți tipul de fișier și generați un nume unic
@@ -626,8 +626,9 @@ export class GdmLiveAudio extends LitElement {
         // Aici poți afișa un mesaj de succes sau face alte acțiuni
         webcam.stop(); // Oprește webcam-ul după upload
         bc.classList.toggle("hidden");
-        this.photoUrl = `https://${process.env.S3_BUCKEt_NAME}.s3.eu-central-1.amazonaws.com/${fileName}`;
-        return `https://${process.env.S3_BUCKEt_NAME}.s3.eu-central-1.amazonaws.com/${fileName}`;
+        this.photoUrl = `https://${process.env.S3_BUCKET_NAME}.s3.eu-central-1.amazonaws.com/uploads/${fileName}`;
+        console.log(this.photoUrl);
+        return this.photoUrl;
       } else {
         const uploadErrorText = await uploadResponse.text();
         throw new Error(
@@ -656,6 +657,7 @@ export class GdmLiveAudio extends LitElement {
     QrCreator.render(
       {
         text: this.photoUrl,
+        size: 300
       },
       qrDiv
     );

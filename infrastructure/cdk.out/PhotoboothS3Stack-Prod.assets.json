@@ -16,7 +16,7 @@
         }
       }
     },
-    "ea876c9579bda1d7c4aa8b0d7415a8607d13029ad2f1ab71fec93b39120bf952": {
+    "220fbd6ed0c652bad5f376c0ba3433454ed3f2d0338f689edc5125f1fb8c3a5c": {
       "displayName": "PhotoboothS3Stack-Prod Template",
       "source": {
         "path": "PhotoboothS3Stack-Prod.template.json",
@@ -25,7 +25,7 @@
       "destinations": {
         "640168432778-eu-central-1": {
           "bucketName": "cdk-hnb659fds-assets-640168432778-eu-central-1",
-          "objectKey": "ea876c9579bda1d7c4aa8b0d7415a8607d13029ad2f1ab71fec93b39120bf952.json",
+          "objectKey": "220fbd6ed0c652bad5f376c0ba3433454ed3f2d0338f689edc5125f1fb8c3a5c.json",
           "region": "eu-central-1",
           "assumeRoleArn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-file-publishing-role-640168432778-eu-central-1"
         }

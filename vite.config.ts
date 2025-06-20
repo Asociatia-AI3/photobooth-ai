@@ -1,38 +1,31 @@
-// vite.config.ts
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
-// Importă ambele funcții de generare URL
 import { generatePresignedUrl, generatePresignedReadUrl } from './server/generatePresignedUrl';
 
 export default defineConfig(({ mode }) => {
-  // Load environment variables based on the current mode
-  const env = loadEnv(mode, process.cwd(), ''); // Use process.cwd() for root directory
+  const env = loadEnv(mode, process.cwd(), '');
 
-  // Extract AWS specific environment variables
   const awsConfig = {
-    accessKeyId: env.AWS_ACCESS_KEY_ID || '', // Asigură-te că aceste variabile sunt în .env
+    accessKeyId: env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY || '',
-    region: env.AWS_REGION || 'eu-central-1', // Default region if not specified
+    region: env.AWS_REGION || 'eu-central-1',
     bucketName: env.S3_BUCKET_NAME || '',
   };
 
-  // Basic validation for AWS config (optional, but good practice)
+  console.log('[Vite Config] Loaded S3_BUCKET_NAME:', awsConfig.bucketName);
+  console.log('[Vite Config] Loaded AWS_REGION:', awsConfig.region);
   if (!awsConfig.accessKeyId || !awsConfig.secretAccessKey || !awsConfig.bucketName) {
-    console.warn('WARNING: AWS credentials or S3_BUCKET_NAME are not fully configured in .env. API routes might fail.');
+    console.warn('⚠️ WARNING: AWS credentials or S3_BUCKET_NAME are not fully configured in your .env file. API routes might fail.');
   }
 
   return {
     define: {
-      // These are for the frontend client-side code
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.AI3_LOGIN': JSON.stringify(env.AI3_LOGIN),
       'process.env.AI3_PW': JSON.stringify(env.AI3_PW),
       'process.env.S3_BUCKET_NAME': JSON.stringify(env.S3_BUCKET_NAME),
-      // Also expose AWS config for frontend if needed (e.g., for direct S3 upload with Cognito Identity Pool)
-      'process.env.AWS_ACCESS_KEY_ID': JSON.stringify(awsConfig.accessKeyId),
-      'process.env.AWS_SECRET_ACCESS_KEY': JSON.stringify(awsConfig.secretAccessKey),
       'process.env.AWS_REGION': JSON.stringify(awsConfig.region),
     },
     resolve: {
@@ -42,96 +35,109 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [vue()],
     server: {
-      // Eliminăm blocul `proxy` dacă gestionăm rutele direct în `configureServer`
-      // `proxy` este pentru redirecționarea cererilor către un *server extern*.
-      // `configureServer` este pentru gestionarea cererilor *în cadrul* serverului Vite.
-      proxy: {}, // Lăsăm gol sau îl eliminăm complet dacă nu ai alte proxy-uri
+      proxy: {
+        '/api/presigned-url': {
+          target: "http://does-not.exist",
+          changeOrigin: true,
+          secure: false,
+          configure: (proxy, options) => {
+            proxy.on('proxyReq', async (proxyReq, req, res) => {
+              console.log(`[Vite Proxy] Intercepted request to: ${req.url} for method: ${req.method}`);
 
-      configureServer(server: any) {
-        console.info("Configure started");
-        // --- Middleware pentru /api/presigned-url (PUT) ---
-        server.middlewares.use(async (req: any, res: any, next: any) => {
-          console.log(`Dev URL: ${req.url}`);
-          // Verifică dacă URL-ul cererii începe cu ruta API și metoda este GET
-          if (req.url?.startsWith('/api/presigned-url') && req.method === 'GET') {
-            const url = new URL(req.url, `http://${req.headers.host}`);
-            const fileName = url.searchParams.get('fileName');
-            const fileType = url.searchParams.get('fileType');
+              const url = new URL(req.url!, `http://${req.headers.host}`);
+              const fileName = url.searchParams.get('fileName');
+              const fileType = url.searchParams.get('fileType');
 
-            // Set CORS headers early for preflight and actual requests
-            res.setHeader('Access-Control-Allow-Origin', '*'); // Adaptează la originea aplicației tale!
-            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'); // Include X-Requested-With for some clients
+              // AICI ESTE CRUCIAL: Setăm anteturile CORS și Content-Type O SINGURĂ DATĂ
+              // indiferent de rezultat, ÎNAINTE de orice `res.end()` sau `res.write()`.
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+              res.setHeader('Content-Type', 'application/json'); // Asigură-te că tipul de conținut este JSON
 
-            if (req.method === 'OPTIONS') { // Handle CORS preflight
-              res.statusCode = 204;
-              res.end();
-              return; // Terminate response
-            }
+              if (req.method === 'OPTIONS') {
+                console.log('[Vite Proxy] OPTIONS request received for /api/presigned-url, sending 204.');
+                res.statusCode = 204;
+                res.end();
+                // Important: Oprește cererea către backend-ul fictiv al proxy-ului
+                proxyReq.destroy(); 
+                return;
+              }
 
-            if (!fileName || !fileType) {
-              res.statusCode = 400;
+              if (!fileName || !fileType) {
+                console.warn('[Vite Proxy] Missing fileName or fileType for /api/presigned-url.');
+                res.statusCode = 400; // Bad Request
+                res.end(JSON.stringify({ error: 'Missing fileName or fileType' }));
+                proxyReq.destroy(); // Oprește cererea
+                return;
+              }
+
+              try {
+                const presignedUrl = await generatePresignedUrl(fileName, fileType, awsConfig);
+                console.log('[Vite Proxy] Successfully generated presigned URL for upload.');
+                res.statusCode = 200; // OK
+                res.end(JSON.stringify({ presignedUrl }));
+                proxyReq.destroy(); // Oprește cererea după răspuns
+              } catch (error: any) {
+                console.error('[Vite Proxy] Error handling /api/presigned-url:', error.message);
+                res.statusCode = 500; // Internal Server Error
+                res.end(JSON.stringify({ error: error.message || 'Internal server error' }));
+                proxyReq.destroy(); // Oprește cererea chiar și la eroare
+              }
+            });
+          },
+        },
+
+        '/api/presigned-read-url': {
+          target: 'http://localhost',
+          changeOrigin: true,
+          secure: false,
+          configure: (proxy, options) => {
+            proxy.on('proxyReq', async (proxyReq, req, res) => {
+              console.log(`[Vite Proxy] Intercepted read request to: ${req.url} for method: ${req.method}`);
+
+              const url = new URL(req.url!, `http://${req.headers.host}`);
+              const s3Key = url.searchParams.get('key');
+              const expiresIn = url.searchParams.get('expiresIn');
+
+              // AICI ESTE CRUCIAL: Setăm anteturile CORS și Content-Type O SINGURĂ DATĂ
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+              res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: 'Missing fileName or fileType' }));
-              return;
-            }
 
-            try {
-              const presignedUrl = await generatePresignedUrl(fileName, fileType, awsConfig);
-              res.statusCode = 200;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ presignedUrl }));
-            } catch (error: any) {
-              console.error('Error in /api/presigned-url:', error);
-              res.statusCode = 500;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: error.message || 'Internal server error' }));
-            }
-            return; // Important: Terminate the request here to prevent fallthrough
-          }
+              if (req.method === 'OPTIONS') {
+                console.log('[Vite Proxy] OPTIONS request received for /api/presigned-read-url, sending 204.');
+                res.statusCode = 204;
+                res.end();
+                proxyReq.destroy(); // Oprește cererea
+                return;
+              }
 
-          // --- Middleware pentru /api/presigned-read-url (GET) ---
-          if (req.url?.startsWith('/api/presigned-read-url') && req.method === 'GET') {
-            const url = new URL(req.url, `http://${req.headers.host}`);
-            const s3Key = url.searchParams.get('key');
-            const expiresIn = url.searchParams.get('expiresIn');
+              if (!s3Key) {
+                console.warn('[Vite Proxy] Missing S3 object key for /api/presigned-read-url.');
+                res.statusCode = 400; // Bad Request
+                res.end(JSON.stringify({ error: 'Missing S3 object key' }));
+                proxyReq.destroy(); // Oprește cererea
+                return;
+              }
 
-            // Set CORS headers early
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
-
-            if (req.method === 'OPTIONS') { // Handle CORS preflight
-              res.statusCode = 204;
-              res.end();
-              return;
-            }
-
-            if (!s3Key) {
-              res.statusCode = 400;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: 'Missing S3 object key' }));
-              return;
-            }
-
-            try {
-              const expiresInNum = expiresIn ? parseInt(expiresIn, 10) : undefined;
-              const presignedReadUrl = await generatePresignedReadUrl(s3Key, awsConfig, expiresInNum);
-              res.statusCode = 200;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ presignedReadUrl }));
-            } catch (error: any) {
-              console.error('Error in /api/presigned-read-url:', error);
-              res.statusCode = 500;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: error.message || 'Internal server error' }));
-            }
-            return; // Important: Terminate the request here
-          }
-
-          // Dacă cererea nu este pentru API-ul nostru, continuă la următoarele middleware-uri Vite
-          next();
-        });
+              try {
+                const expiresInNum = expiresIn ? parseInt(expiresIn, 10) : undefined;
+                const presignedReadUrl = await generatePresignedReadUrl(s3Key, awsConfig, expiresInNum);
+                console.log('[Vite Proxy] Successfully generated presigned read URL.');
+                res.statusCode = 200; // OK
+                res.end(JSON.stringify({ presignedReadUrl }));
+                proxyReq.destroy(); // Oprește cererea după răspuns
+              } catch (error: any) {
+                console.error('[Vite Proxy] Error handling /api/presigned-read-url:', error.message);
+                res.statusCode = 500; // Internal Server Error
+                res.end(JSON.stringify({ error: error.message || 'Internal server error' }));
+                proxyReq.destroy(); // Oprește cererea chiar și la eroare
+              }
+            });
+          },
+        },
       },
     },
   };

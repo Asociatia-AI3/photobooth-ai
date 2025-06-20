@@ -31,7 +31,6 @@ export async function generatePresignedUrl(
         Bucket: bucketName,
         Key: key,
         ContentType: fileType,
-        ACL: 'public-read', // Opțional: dacă vrei ca fișierul să fie public
     });
 
     try {
