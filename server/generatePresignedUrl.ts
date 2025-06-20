@@ -1,38 +1,78 @@
 // server/generatePresignedUrl.ts
-import { S3Client } from '@aws-sdk/client-s3';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const AWS_REGION = process.env.AWS_REGION || 'eu-central-1';
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || 'photobooths3stack-prod-photoboothbucket0359994f-5sgv4fdcjvfk';
+// Definim o interfață pentru a tipa variabilele de mediu
+interface AwsConfig {
+    accessKeyId: string;
+    secretAccessKey: string;
+    region: string;
+    bucketName: string;
+}
 
-const s3Client = new S3Client({
-    region: AWS_REGION,
-    credentials: {
-        accessKeyId: AWS_ACCESS_KEY_ID!,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY!,
-    },
-});
+// Modificăm funcția pentru a primi configurația AWS
+export async function generatePresignedUrl(
+    fileName: string,
+    fileType: string,
+    awsConfig: AwsConfig
+): Promise<string> {
+    const { accessKeyId, secretAccessKey, region, bucketName } = awsConfig;
 
-export async function generatePresignedUrl(fileName: string, fileType: string): Promise<string> {
-    const key = `uploads/${fileName}`;
+    const s3Client = new S3Client({
+        region: region,
+        credentials: {
+            accessKeyId: accessKeyId,
+            secretAccessKey: secretAccessKey,
+        },
+    });
+
+    const key = `uploads/${fileName}`; // Definește calea în S3
     const command = new PutObjectCommand({
-        Bucket: S3_BUCKET_NAME,
+        Bucket: bucketName,
         Key: key,
         ContentType: fileType,
-        ACL: 'public-read',
+        ACL: 'public-read', // Opțional: dacă vrei ca fișierul să fie public
     });
 
     try {
         const presignedUrl = await getSignedUrl(s3Client, command, {
-            expiresIn: 600,
+            expiresIn: 600, // URL-ul va fi valid timp de 600 de secunde (10 minute)
         });
         console.log(`URL pre-signed generat pentru ${key}: ${presignedUrl}`);
         return presignedUrl;
     } catch (error) {
         console.error('Eroare la generarea URL-ului pre-signed:', error);
-        throw new Error('Could not generate pre-signed URL.');
+        throw new Error(`Could not generate pre-signed URL: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+// Noua funcție pentru URL pre-signed de citire (GET)
+export async function generatePresignedReadUrl(
+    key: string,
+    awsConfig: AwsConfig,
+    expiresIn: number = 3600 // Durata de valabilitate în secunde (implicit 1 oră)
+): Promise<string> {
+    const { accessKeyId, secretAccessKey, region, bucketName } = awsConfig;
+
+    const s3Client = new S3Client({
+        region: region,
+        credentials: {
+            accessKeyId: accessKeyId,
+            secretAccessKey: secretAccessKey,
+        },
+    });
+
+    const command = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+    });
+
+    try {
+        const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+        console.log(`URL pre-signed de citire generat pentru ${key}: ${presignedUrl}`);
+        return presignedUrl;
+    } catch (error) {
+        console.error('Eroare la generarea URL-ului pre-signed de citire:', error);
+        throw new Error(`Could not generate pre-signed read URL: ${error instanceof Error ? error.message : String(error)}`);
     }
 }

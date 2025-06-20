@@ -1,0 +1,36 @@
+{
+  "version": "44.0.0",
+  "files": {
+    "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6": {
+      "displayName": "PhotoboothS3Stack-Prod/Custom::S3AutoDeleteObjectsCustomResourceProvider Code",
+      "source": {
+        "path": "asset.faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "640168432778-eu-central-1": {
+          "bucketName": "cdk-hnb659fds-assets-640168432778-eu-central-1",
+          "objectKey": "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6.zip",
+          "region": "eu-central-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-file-publishing-role-640168432778-eu-central-1"
+        }
+      }
+    },
+    "ea876c9579bda1d7c4aa8b0d7415a8607d13029ad2f1ab71fec93b39120bf952": {
+      "displayName": "PhotoboothS3Stack-Prod Template",
+      "source": {
+        "path": "PhotoboothS3Stack-Prod.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "640168432778-eu-central-1": {
+          "bucketName": "cdk-hnb659fds-assets-640168432778-eu-central-1",
+          "objectKey": "ea876c9579bda1d7c4aa8b0d7415a8607d13029ad2f1ab71fec93b39120bf952.json",
+          "region": "eu-central-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-file-publishing-role-640168432778-eu-central-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

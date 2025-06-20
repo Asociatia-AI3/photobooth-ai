@@ -1,0 +1,126 @@
+{
+  "version": "44.0.0",
+  "artifacts": {
+    "PhotoboothS3Stack-Prod.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "PhotoboothS3Stack-Prod.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "PhotoboothS3Stack-Prod": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://640168432778/eu-central-1",
+      "properties": {
+        "templateFile": "PhotoboothS3Stack-Prod.template.json",
+        "terminationProtection": false,
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-deploy-role-640168432778-eu-central-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-cfn-exec-role-640168432778-eu-central-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-640168432778-eu-central-1/ea876c9579bda1d7c4aa8b0d7415a8607d13029ad2f1ab71fec93b39120bf952.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "PhotoboothS3Stack-Prod.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::640168432778:role/cdk-hnb659fds-lookup-role-640168432778-eu-central-1",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        }
+      },
+      "dependencies": [
+        "PhotoboothS3Stack-Prod.assets"
+      ],
+      "metadata": {
+        "/PhotoboothS3Stack-Prod/PhotoboothBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "PhotoboothBucket0359994F"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/PhotoboothBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "PhotoboothBucketPolicyF22E7569"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/PhotoboothBucket/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "PhotoboothBucketAutoDeleteObjectsCustomResource24788F62"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/Custom::S3AutoDeleteObjectsCustomResourceProvider": [
+          {
+            "type": "aws:cdk:is-custom-resource-handler-customResourceProvider",
+            "data": true
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/PhotoboothUserGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "PhotoboothUserGroupA73E7514"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/PhotoboothS3AccessPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "PhotoboothS3AccessPolicyE3C663BD"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/OutputPhotoboothBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputPhotoboothBucketName"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/OutputPhotoboothUserGroupName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputPhotoboothUserGroupName"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/PhotoboothS3Stack-Prod/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "PhotoboothS3Stack-Prod"
+    },
+    "Tree": {
+      "type": "cdk:tree",
+      "properties": {
+        "file": "tree.json"
+      }
+    }
+  },
+  "minimumCliVersion": "2.1019.1"
+}
