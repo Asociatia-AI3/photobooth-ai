@@ -14,6 +14,6 @@ body {
   border: 5px solid white !important;
   border-radius: 10px;
 }
-#ticketScanner.hidden {
+.hidden {
   display: none;
 }

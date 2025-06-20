@@ -19,7 +19,7 @@ import { createBlob, decode, decodeAudioData } from "./utils";
 import "./visual-3d";
 import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import { Html5QrcodeErrorTypes } from "html5-qrcode/src/core";
-import { Webcam } from "ts-webcam";
+import { Webcam, WebcamError } from "ts-webcam";
 import QrCreator from "qr-creator";
 
 interface Visitor {
@@ -28,6 +28,23 @@ interface Visitor {
   email: string;
   ticketQr: string;
 }
+
+function dataURLtoBlob(dataurl: string): Blob {
+    const arr = dataurl.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    if (!mimeMatch) {
+        throw new Error('Invalid data URL format: MIME type not found.');
+    }
+    const mime = mimeMatch[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+}
+
 
 @customElement("gdm-live-audio")
 export class GdmLiveAudio extends LitElement {
@@ -48,6 +65,7 @@ export class GdmLiveAudio extends LitElement {
   private sources = new Set<AudioBufferSourceNode>();
   private qrScanner?: Html5Qrcode | undefined;
   private visitor: Visitor | undefined;
+  private photoUrl: string | undefined; 
 
   private ai3SessionToken: string | undefined;
   private graphqlEndpoint = "https://api.ai3.ro/api/graphql";
@@ -566,7 +584,77 @@ export class GdmLiveAudio extends LitElement {
     this.updateStatus("Session cleared.");
   }
 
-  private captureSnapshot() {}
+  private async captureSnapshot() {
+    try {
+        // 1. Capturați imaginea de la webcam
+        // Create Webcam instance
+        const webcam = new Webcam();
+
+        // Get available video devices
+        const videoDevices = await webcam.getVideoDevices();
+        const selectedDevice = videoDevices[0]; // or let user select
+        webcam.setupConfiguration({
+          deviceInfo: selectedDevice,
+          videoElement: document.getElementById("boothCam") as HTMLVideoElement,
+          debug: true, // Enable debug logging to console
+          onStart: () => console.log("Webcam started"),
+          onError: (error: WebcamError) => {
+            console.error("Error code:", error.code);
+            console.error("Error message:", error.message);
+          },
+        });
+        await webcam.start(); // Asigură-te că webcam-ul este pornit înainte de a captura
+        const imageDataUrl = await webcam.captureImage({
+            scale: 1.0,
+            mediaType: 'image/jpeg',
+            quality: 0.8
+        });
+
+        // 2. Extrageți tipul de fișier și generați un nume unic
+        const blob = dataURLtoBlob(imageDataUrl);
+        const fileType = blob.type; // ex: 'image/jpeg'
+        const fileName = `webcam-capture-${Date.now()}.jpeg`; // Nume unic pentru fișier
+
+        // 3. Obțineți URL-ul pre-signed de la serverul Vite (sau API-ul de backend)
+        console.log('Solicităm URL pre-signed de la server...');
+        const response = await fetch(`/api/presigned-url?fileName=${fileName}&fileType=${fileType}`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Eroare la obținerea URL-ului pre-signed: ${errorData.error}`);
+        }
+        const data = await response.json();
+        const presignedUrl = data.presignedUrl;
+        console.log('URL pre-signed primit:', presignedUrl);
+
+        // 4. Încarcă imaginea direct în S3 folosind URL-ul pre-signed
+        console.log('Încărcăm imaginea în S3...');
+        const uploadResponse = await fetch(presignedUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': fileType,
+            },
+            body: blob,
+        });
+
+        if (uploadResponse.ok) {
+            console.log('Imaginea a fost încărcată cu succes în S3!');
+            // Aici poți afișa un mesaj de succes sau face alte acțiuni
+            webcam.stop(); // Oprește webcam-ul după upload
+            QrCreator.render(
+              {
+                text: `https://${process.env.S3_BUCKEt_NAME}.s3.eu-central-1.amazonaws.com/${fileName}`
+              }, 
+              document.getElementById('downloaderQR') as HTMLDivElement
+            );
+        } else {
+            const uploadErrorText = await uploadResponse.text();
+            throw new Error(`Eroare la încărcarea în S3: ${uploadResponse.status} ${uploadResponse.statusText} - ${uploadErrorText}`);
+        }
+    } catch (error) {
+        console.error('Eroare generală la procesul de upload:', error);
+        // Afișează o eroare utilizatorului
+    }
+  }
 
   render() {
     const vis3d =
