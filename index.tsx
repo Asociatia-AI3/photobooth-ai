@@ -209,8 +209,9 @@ export class GdmLiveAudio extends LitElement {
   }
 
   protected async startQrScanner() {
-    this.qrScanner = new Html5Qrcode("ticketScanner", false);
-    document.getElementById("ticketScanner")?.classList.remove("hidden");
+    if (!this.qrScanner)
+      this.qrScanner = new Html5Qrcode("ticketScanner", false);
+    document.getElementById("ticketScanner")?.classList.toggle("hidden");
     await this.qrScanner?.start(
       { facingMode: "environment" },
       { fps: 5, qrbox: { width: 150, height: 150 } },
@@ -218,7 +219,7 @@ export class GdmLiveAudio extends LitElement {
         await this.syncVisitor(txt);
         if (this.qrScanner?.getState() === Html5QrcodeScannerState.SCANNING) {
           await this.qrScanner?.stop();
-          document.getElementById("ticketScanner")?.classList.add("hidden");
+          document.getElementById("ticketScanner")?.classList.toggle("hidden");
         }
         this.initClient();
         this.startRecording();
@@ -315,9 +316,10 @@ export class GdmLiveAudio extends LitElement {
     }
     this.initAudio();
 
-    this.client = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-    });
+    if (!this.client)
+      this.client = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+      });
 
     this.outputNode?.connect(this.outputAudioContext?.destination);
 
@@ -341,7 +343,7 @@ export class GdmLiveAudio extends LitElement {
         functionDeclarations: [
           {
             name: "capture_snapshot",
-            description: "Take webcam photo for the user at the photobooth. Response is an object with a nullable photo url prop",
+            description: "Take webcam photo for the user at the photobooth. Response is an object with a nullable photo url prop. Never read this url.",
             parameters: { type: Type.OBJECT, properties: {}, required: [] },
           },
           {
@@ -387,7 +389,7 @@ export class GdmLiveAudio extends LitElement {
                   response = {"qrSuccess": await this.displayQR()};
                 }else if (name === "terminate_session") {
                   response = {"sessionTerminated": true};
-                  setTimeout(() => this.reset(), 5000);
+                  setTimeout(() => this.reset(), 2000);
                 }
                 console.log("responding to ", id, name, args);
                 responses.push({ id, name, response: { output: response } });
@@ -447,8 +449,10 @@ export class GdmLiveAudio extends LitElement {
 
           systemInstruction: `
             Esti un agent de photobooth la festivalul diffusion (pronuntat ca in engleza) si vorbesti cu 
-            ${this.visitor?.name} care doreste sa faca o poza. Te folosesti de apelurile de functii aflate la dispozitie pentru
-            a raspunde solicitarilor utilizatorului. Vei vorbi in limba engleza.`,
+            ${this.visitor?.name} care doreste sa faca o poza. Incepe tu sa vorbesti cu utilizatorul, spunand-ui despre difffusion, un festival
+            digital in Alba Iulia, Romania. Ii spui de asemenea despre rolul tau. Te folosesti de apelurile de functii aflate la dispozitie pentru
+            a raspunde solicitarilor utilizatorului. Vei vorbi in limba engleza. Niciodata nu citesti URL-ul unei fotografii cu vocea, intreaba
+            intotdeauna daca sa afisezi un cod QR. Daca utilizatorul face o pauza lunga, il intrebi daca mai e acolo si daca nu confirma poti inchide sesiunea.`,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
             languageCode: "en-US",
@@ -558,8 +562,8 @@ export class GdmLiveAudio extends LitElement {
 
   private reset() {
     this.session?.close();
-    this.initSession();
-    this.updateStatus("Session cleared.");
+    this.stopRecording();
+    this.startQrScanner();
   }
 
   private async captureSnapshot() {
@@ -585,6 +589,7 @@ export class GdmLiveAudio extends LitElement {
         },
       });
       await webcam.start(); // Asigură-te că webcam-ul este pornit înainte de a captura
+      await new Promise(resolve => setTimeout(resolve, 2000));
       const imageDataUrl = await webcam.captureImage({
         scale: 1.0,
         mediaType: "image/jpeg",
@@ -663,8 +668,7 @@ export class GdmLiveAudio extends LitElement {
     );
     setTimeout(() => { 
       qrDiv.classList.toggle("hidden");
-      this.reset();
-    }, 60000); 
+    }, 20000); 
     return true;
   }
 

@@ -14,6 +14,11 @@ body {
   border: 5px solid white !important;
   border-radius: 10px;
 }
+#ticketScanner video {
+  max-height: 150px;
+  max-width: 150px;
+}
+
 #downloaderQR {
   height: 300px;
   width: 300px;
