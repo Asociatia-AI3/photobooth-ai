@@ -343,17 +343,17 @@ export class GdmLiveAudio extends LitElement {
         functionDeclarations: [
           {
             name: "capture_snapshot",
-            description: "Take webcam photo for the user at the photobooth. Response is an object with a nullable photo url prop. Never read this url.",
+            description: "Fă o fotografie cu camera web pentru utilizatorul de la photobooth. Răspunsul este un obiect cu o proprietate nullable photo url.Fă o fotografie cu camera web pentru utilizatorul de la photobooth. Răspunsul este un obiect cu o proprietate nullable photo url.",
             parameters: { type: Type.OBJECT, properties: {}, required: [] },
           },
           {
             name: "generate_qr",
-            description: "Display a QR code for the photo taken from the webcam so that the user can download it. Response is a boolean",
+            description: "Afișează un cod QR pentru fotografia făcută de camera web, astfel încât utilizatorul să o poată descărca. Răspunsul este de tip boolean.",
             parameters: {},
           },
           {
             name: "terminate_session",
-            description: "If the user seems to want to end the conversation, terminate the current session",
+            description: "Dacă utilizatorul pare că dorește să încheie conversația, oprește sesiunea curentă.",
             parameters: {},
           },
         ],
@@ -454,8 +454,8 @@ export class GdmLiveAudio extends LitElement {
             a raspunde solicitarilor utilizatorului. Vei vorbi in limba engleza. Niciodata nu citesti URL-ul unei fotografii cu vocea, intreaba
             intotdeauna daca sa afisezi un cod QR. Daca utilizatorul face o pauza lunga, il intrebi daca mai e acolo si daca nu confirma poti inchide sesiunea.`,
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-            languageCode: "en-US",
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "ro-RO-Wavenet-B" } },
+            languageCode: "ro-Ro",
           },
         },
       });
